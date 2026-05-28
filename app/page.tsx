@@ -91,7 +91,6 @@ function BarList({items}:{items:{label:string;count:number;time?:number}[]}) {
   )
 }
 
-// XLS Import Modal
 function ImportModal({onClose,onDone}:{onClose:()=>void;onDone:(count:number)=>void}) {
   const [status,setStatus]=useState<'idle'|'loading'|'done'|'error'>('idle')
   const [msg,setMsg]=useState('')
@@ -99,19 +98,15 @@ function ImportModal({onClose,onDone}:{onClose:()=>void;onDone:(count:number)=>v
   const fileRef=useRef<HTMLInputElement>(null)
 
   async function handleFile(file: File) {
-    if (!file) return
-    setStatus('loading'); setMsg('Datei wird gelesen…')
+    setStatus('loading'); setMsg('Wird importiert…')
     try {
-      const XLSX = await import('https://esm.sh/xlsx@0.18.5' as string) as typeof import('xlsx')
-      const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf,{type:'array'})
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const rows = XLSX.utils.sheet_to_json(ws,{defval:''})
-      setMsg(`${rows.length} Zeilen gefunden, wird importiert…`)
-      const res = await fetch('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})})
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/import', { method: 'POST', body: fd })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setStatus('done'); setMsg(`✅ ${data.imported} Flüge importiert, ${data.skipped} übersprungen.`)
+      setStatus('done')
+      setMsg(`${data.imported} Flüge importiert${data.skipped>0?`, ${data.skipped} übersprungen`:''}.`)
       onDone(data.imported)
     } catch(e) {
       setStatus('error'); setMsg(`Fehler: ${e instanceof Error?e.message:String(e)}`)
@@ -124,32 +119,39 @@ function ImportModal({onClose,onDone}:{onClose:()=>void;onDone:(count:number)=>v
         <div className="modal-handle"/>
         <div className="modal-header">
           <div className="modal-title">📥 Flüge importieren</div>
-          <div className="modal-date">XLS / XLSX Logbuch-Datei hochladen</div>
+          <div className="modal-date">Logbuch als XLS oder XLSX hochladen</div>
         </div>
-        <div style={{padding:'20px 22px'}}>
+        <div style={{padding:'22px'}}>
           {status==='idle'&&(
-            <div
-              className={`import-zone${drag?' drag':''}`}
-              onDragOver={e=>{e.preventDefault();setDrag(true)}}
-              onDragLeave={()=>setDrag(false)}
-              onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)handleFile(f)}}
-              onClick={()=>fileRef.current?.click()}
-            >
-              <span className="import-zone-icon">📂</span>
-              <div className="import-zone-title">XLS/XLSX Datei auswählen</div>
-              <div className="import-zone-sub">Tippen oder Datei hierher ziehen</div>
-              <input ref={fileRef} type="file" accept=".xls,.xlsx" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f)}}/>
-            </div>
+            <>
+              <div
+                className={`import-zone${drag?' drag':''}`}
+                onDragOver={e=>{e.preventDefault();setDrag(true)}}
+                onDragLeave={()=>setDrag(false)}
+                onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)handleFile(f)}}
+                onClick={()=>fileRef.current?.click()}
+              >
+                <span className="import-zone-icon">📂</span>
+                <div className="import-zone-title">XLS / XLSX auswählen</div>
+                <div className="import-zone-sub">Tippen zum Auswählen oder Datei hier reinziehen</div>
+                <input ref={fileRef} type="file" accept=".xls,.xlsx" style={{display:'none'}}
+                  onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f)}}/>
+              </div>
+              <div style={{marginTop:16,padding:'12px 16px',background:'rgba(239,246,255,0.8)',borderRadius:12,fontSize:13,color:'var(--text-muted)',lineHeight:1.6}}>
+                <strong style={{color:'var(--primary-dark)'}}>Erwartete Spalten:</strong><br/>
+                Datum • Start (oder Startplatz) • Landung (oder Landeplatz) • Gleitschirm • Flugzeit in min • Kommentar
+              </div>
+            </>
           )}
           {status==='loading'&&(
             <div className="loading"><div className="loading-ring"/>{msg}</div>
           )}
           {(status==='done'||status==='error')&&(
-            <div style={{textAlign:'center',padding:'20px 0'}}>
-              <div style={{fontSize:32,marginBottom:12}}>{status==='done'?'🎉':'❌'}</div>
-              <div style={{fontSize:16,fontWeight:700,color:status==='done'?'#065f46':'#dc2626',marginBottom:16}}>{msg}</div>
+            <div style={{textAlign:'center',padding:'16px 0'}}>
+              <div style={{fontSize:40,marginBottom:12}}>{status==='done'?'🎉':'❌'}</div>
+              <div style={{fontSize:16,fontWeight:800,color:status==='done'?'#065f46':'#dc2626',marginBottom:20}}>{msg}</div>
               {status==='done'
-                ?<button className="btn btn-success btn-block" onClick={onClose}>Fertig – Los geht's! 🪂</button>
+                ?<button className="btn btn-primary btn-block" onClick={onClose}>Los geht's! 🪂</button>
                 :<button className="btn btn-secondary btn-block" onClick={()=>{setStatus('idle');setMsg('')}}>Nochmal versuchen</button>}
             </div>
           )}
@@ -174,9 +176,10 @@ export default function App() {
   const [saving,setSaving]=useState(false)
   const [showImport,setShowImport]=useState(false)
 
-  const showToast=useCallback((msg:string)=>{setToast(msg);setTimeout(()=>setToast(''),2800)},[])
+  const showToast=useCallback((msg:string)=>{setToast(msg);setTimeout(()=>setToast(''),3000)},[])
 
   const loadData=useCallback(()=>{
+    setLoading(true)
     Promise.all([
       fetch('/api/flights').then(r=>r.json()),
       fetch('/api/options').then(r=>r.json()),
@@ -276,9 +279,7 @@ export default function App() {
             <div className="card">
               <div className="card-header">
                 <div className="card-title">{editingId?'✏️ Flug bearbeiten':'＋ Neuer Flug'}</div>
-                {!editingId&&flights.length===0&&(
-                  <button className="btn btn-sm btn-secondary" style={{fontSize:12}} onClick={()=>setShowImport(true)}>📥 XLS importieren</button>
-                )}
+                <button className="btn btn-sm btn-secondary" style={{fontSize:12}} onClick={()=>setShowImport(true)}>📥 XLS Import</button>
               </div>
               <div className="card-body">
                 <div className="field">
@@ -322,12 +323,6 @@ export default function App() {
                 </button>
               </div>
             </div>
-
-            {flights.length>0&&(
-              <div style={{textAlign:'center',marginTop:4}}>
-                <button className="btn btn-secondary btn-sm" onClick={()=>setShowImport(true)}>📥 XLS importieren</button>
-              </div>
-            )}
           </div>
         )}
 
@@ -399,27 +394,13 @@ export default function App() {
               </div>
             )}
 
-            <div className="card">
-              <div className="card-header"><div className="card-title">🪂 Pro Gleitschirm</div></div>
-              <div className="dash-section">{bySchirm.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={bySchirm}/>}</div>
-            </div>
+            <div className="card"><div className="card-header"><div className="card-title">🪂 Pro Gleitschirm</div></div><div className="dash-section">{bySchirm.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={bySchirm}/>}</div></div>
 
-            {byGurtzeug.length>0&&(
-              <div className="card">
-                <div className="card-header"><div className="card-title">🎽 Pro Gurtzeug</div></div>
-                <div className="dash-section"><BarList items={byGurtzeug}/></div>
-              </div>
-            )}
+            {byGurtzeug.length>0&&<div className="card"><div className="card-header"><div className="card-title">🎽 Pro Gurtzeug</div></div><div className="dash-section"><BarList items={byGurtzeug}/></div></div>}
 
-            <div className="card">
-              <div className="card-header"><div className="card-title">📍 Top Startplätze</div></div>
-              <div className="dash-section">{byStart.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={byStart}/>}</div>
-            </div>
+            <div className="card"><div className="card-header"><div className="card-title">📍 Top Startplätze</div></div><div className="dash-section">{byStart.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={byStart}/>}</div></div>
 
-            <div className="card">
-              <div className="card-header"><div className="card-title">🏁 Top Landeplätze</div></div>
-              <div className="dash-section">{byLand.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={byLand}/>}</div>
-            </div>
+            <div className="card"><div className="card-header"><div className="card-title">🏁 Top Landeplätze</div></div><div className="dash-section">{byLand.length===0?<div style={{color:'var(--text-muted)',fontSize:14}}>Keine Daten</div>:<BarList items={byLand}/>}</div></div>
           </div>
         )}
 
@@ -428,15 +409,9 @@ export default function App() {
 
       <nav className="tab-bar">
         <div className="tab-bar-inner">
-          <button className={`tab-btn${tab==='erfassen'?' active':''}`} onClick={()=>setTab('erfassen')}>
-            <span className="tab-icon">✏️</span>Erfassen
-          </button>
-          <button className={`tab-btn${tab==='fluege'?' active':''}`} onClick={()=>{setTab('fluege');setSearch('')}}>
-            <span className="tab-icon">📋</span>Flüge
-          </button>
-          <button className={`tab-btn${tab==='dashboard'?' active':''}`} onClick={()=>setTab('dashboard')}>
-            <span className="tab-icon">📊</span>Dashboard
-          </button>
+          <button className={`tab-btn${tab==='erfassen'?' active':''}`} onClick={()=>setTab('erfassen')}><span className="tab-icon">✏️</span>Erfassen</button>
+          <button className={`tab-btn${tab==='fluege'?' active':''}`} onClick={()=>{setTab('fluege');setSearch('')}}><span className="tab-icon">📋</span>Flüge</button>
+          <button className={`tab-btn${tab==='dashboard'?' active':''}`} onClick={()=>setTab('dashboard')}><span className="tab-icon">📊</span>Dashboard</button>
         </div>
       </nav>
 
@@ -467,9 +442,8 @@ export default function App() {
         <ImportModal
           onClose={()=>setShowImport(false)}
           onDone={(count)=>{
-            showToast(`${count} Flüge importiert! 🎉`)
+            showToast(`🎉 ${count} Flüge erfolgreich importiert!`)
             setShowImport(false)
-            setLoading(true)
             loadData()
           }}
         />

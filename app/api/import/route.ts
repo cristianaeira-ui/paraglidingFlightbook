@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import * as XLSX from 'xlsx'
 
 function excelDateToISO(raw: unknown): string | null {
   if (typeof raw === 'number') {
-    // Excel serial date
     const epoch = new Date(1899, 11, 30)
     epoch.setDate(epoch.getDate() + Math.floor(raw))
     const y = epoch.getFullYear()
@@ -22,8 +22,14 @@ function excelDateToISO(raw: unknown): string | null {
 
 export async function POST(req: Request) {
   try {
-    const { rows } = await req.json() as { rows: Record<string, unknown>[] }
-    if (!Array.isArray(rows)) return NextResponse.json({ error: 'Ungültige Daten' }, { status: 400 })
+    const formData = await req.formData()
+    const file = formData.get('file') as File | null
+    if (!file) return NextResponse.json({ error: 'Keine Datei' }, { status: 400 })
+
+    const buf = await file.arrayBuffer()
+    const wb = XLSX.read(buf, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
 
     let imported = 0, skipped = 0
     const BATCH = 100
@@ -43,7 +49,6 @@ export async function POST(req: Request) {
         const bemerkungen = String(row['Kommentar'] ?? row['Bemerkungen'] ?? '').trim() || null
 
         if (!datum || !startplatz || !landeplatz || !gleitschirm) { skipped++; continue }
-
         records.push({ datum, startplatz, landeplatz, gleitschirm, gurtzeug: null, flugzeit, bemerkungen })
         starts.add(startplatz); lands.add(landeplatz); schirme.add(gleitschirm)
       }
